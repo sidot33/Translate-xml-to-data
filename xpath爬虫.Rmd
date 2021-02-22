@@ -1,0 +1,344 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+ Group members:Quan Nie,Zekun Gong,Yingjie Yun,Yunke Wang
+![Caption for the picture](23.PNG)
+1.1relational schema is shown upon, and the sql instruction to create tables in the end of this page
+```{r}
+#link with sqlite database
+library(RSQLite)
+db<-dbConnect(SQLite(),dbname='sqlite.db')
+```
+for Question1, trying to put data from xml to r database, and put those tables in R write into Sql
+```{r}
+library(XML)
+library(sqldf)
+library(RCurl)
+library(tidyr)
+library(dplyr)
+library(sparklyr)
+
+parsed_doc<-xmlParse(file='new.xml',encoding='UTF-8',ignoreBlanks="True")
+
+#table Article
+PubModel<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article',xmlGetAttr,"PubModel")
+PubModel<-as.data.frame(PubModel)
+Articleid<-seq(1,nrow(PubModel))
+Article<-cbind(Articleid,PubModel)
+ArticleTitle<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/ArticleTitle',xmlValue)
+ArticleTitle<-as.data.frame(ArticleTitle)
+Article<-cbind(Article,ArticleTitle)
+
+
+#Table Author
+Author<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/AuthorList',xmlSize)
+Author1<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/AuthorList/Author/LastName',xmlValue)
+Author1<-as.data.frame(Author1)
+Author<-as.data.frame(Author)
+#add corresponsing relationship between articleid and Lastname
+count<-0
+Articleid2<-data.frame("")
+names(Articleid2)<-c("Articleid")
+repeat{
+count<-count+1
+pre<-0
+repeat{
+  pre<-pre+1
+  da<-data.frame(count)
+names(da)<-c("Articleid")
+Articleid2<-rbind(Articleid2,da)
+  if(pre>=Author[count,])
+  {break}
+}
+
+if(count>=19)
+{break}
+
+}
+Articleid2<-Articleid2[-1,]
+Articleid2<-as.data.frame(Articleid2)
+Articleid2<-cbind(Articleid2,Author1)
+
+ForeName<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/AuthorList/Author/ForeName',xmlValue)
+ForeName<-as.data.frame(ForeName)
+
+Initials<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/AuthorList/Author/Initials',xmlValue)
+Articleid2<-cbind(Articleid2,ForeName)
+Initials<-as.data.frame(Initials)
+Articleid2<-cbind(Articleid2,Initials)
+colnames(Articleid2)[2]<-'LastName'
+colnames(Articleid2)[1]<-'Articleid'
+Articleid2[,1]<-as.integer(Articleid2[,1])
+Author2<-Articleid2
+
+```
+```{r}
+#Table History
+PubStatus<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/PubmedData/History/PubMedPubDate',xmlGetAttr,"PubStatus")
+PubStatus<-as.data.frame(PubStatus)
+Historyid<-seq(1,nrow(PubStatus))
+History<-cbind(PubStatus,Historyid)
+Year<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/PubmedData/History/PubMedPubDate/Year',xmlValue)
+Year<-as.data.frame(Year)
+Year[,1]<-as.integer(Year[,1])
+History<-cbind(Year,History)
+Month<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/PubmedData/History/PubMedPubDate/Month',xmlValue)
+Month<-as.data.frame(Month)
+Month[,1]<-as.integer(Month[,1])
+History<-cbind(Month,History)
+Day<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/PubmedData/History/PubMedPubDate/Day',xmlValue)
+Day<-as.data.frame(Day)
+Day[,1]<-as.integer(Day[,1])
+History<-cbind(Day,History)
+
+History1<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/PubmedData/History',xmlSize)
+History1<-as.data.frame(History1)
+count<-0
+Articleid1<-data.frame("")
+names(Articleid1)<-c("H_Articleid")
+repeat{
+count<-count+1
+pre<-0
+repeat{
+  pre<-pre+1
+  da<-data.frame(count)
+names(da)<-c("H_Articleid")
+Articleid1<-rbind(Articleid1,da)
+  if(pre>=History1[count,])
+  {break}
+}
+
+if(count>=19)
+{break}
+
+}
+Articleid1<-Articleid1[-1,]
+Articleid1<-as.data.frame(Articleid1)
+Articleid1<-cbind(Articleid1,History)
+colnames(Articleid1)[1]<-'Articleid'
+Articleid1[,1]<-as.integer(Articleid1[,1])
+History<-Articleid1
+
+```
+```{r}
+#table Journal
+IssnType<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/ISSN',xmlGetAttr,"IssnType")
+IssnType<-as.data.frame(IssnType)
+CitedMedium<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/JournalIssue',xmlGetAttr,"CitedMedium")
+CitedMedium<-as.data.frame(CitedMedium)
+Journal<-cbind(IssnType,CitedMedium)
+ISSN<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/ISSN',xmlValue)
+ISSN<-as.data.frame(ISSN)
+Journal<-cbind(ISSN,Journal)
+
+Title<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/Title',xmlValue)
+Title<-as.data.frame(Title)
+Journal<-cbind(Title,Journal)
+
+ISOAbbreviation<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/ISOAbbreviation',xmlValue)
+ISOAbbreviation<-as.data.frame(ISOAbbreviation)
+Journal<-cbind(ISOAbbreviation,Journal)
+
+Volume<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/JournalIssue/Volume',xmlValue)
+Volume<-as.data.frame(Volume)
+Volume[,1]<-as.integer(Volume[,1])
+Journal<-cbind(Volume,Journal)
+
+Issue<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/JournalIssue/Issue',xmlValue)
+Issue<-as.data.frame(Issue)
+Issue[,1]<-as.integer(Issue[,1])
+Journal<-cbind(Issue,Journal)
+
+PubDate<-xpathSApply(parsed_doc,'//PubmedArticleSet/PubmedArticle/MedlineCitation/Article/Journal/JournalIssue/PubDate',xmlValue)
+PubDate<-as.data.frame(PubDate)
+Journal<-cbind(PubDate,Journal)
+Articleid2<-seq(1,nrow(ISSN))
+Journal<-cbind(Articleid2,Journal)
+colnames(Journal)[1]<-'Articleid'
+
+```
+1.2 create tables in sql for the data written in
+1.3transform data and load in, the tables would shown below
+```{sql connection=db}
+create table if not exists Article28(Articleid int,PubModel varchar(30),ArticleTitle varchar(255),primary key(PubModel,Articleid));
+
+```
+```{r}
+#create table and write data into table
+dbWriteTable(db,'Article28',Article,append=T)
+
+```
+```{sql connection=db}
+create table if not exists History28(Historyid int,PubStatus varchar(30),Articleid int,Year int,Month int,Day int,constraint cid foreign key(Articleid)references Article28(Articleid),primary key(Historyid,PubStatus));
+```
+
+```{r}
+dbWriteTable(db,'History28',History,append=T)
+```
+```{sql connection=db}
+create table if not exists Author28(`LastName` varchar(30), `Articleid` int,`ForeName` Varchar(30),`Initials` Varchar(255),constraint eid foreign key(Articleid) references Article28(Articleid),primary key(Articleid,LastName));
+```
+```{r}
+dbWriteTable(db,'Author28',Author2,append=T)
+```
+```{sql connection=db}
+create table if not exists Journal28(ISSN varchar(255), Articleid int,IssnType varchar(255),CitedMedium varchar(255),Volume int,Issue int,PubDate varchar(255),Title varchar(255),ISOAbbreviation varchar(255),constraint fid foreign key(Articleid) references Article28(Articleid),primary key(ISSN,Articleid));
+```
+```{r}
+dbWriteTable(db,'Journal28',Journal,append=T)
+```
+table Author
+```{sql connection=db}
+select * from Author28;
+
+```
+table Journal
+```{sql connection=db}
+select * from Journal28;
+```
+table History
+```{sql connection=db}
+select * from History28;
+```
+table Article
+```{sql connection=db}
+select * from Article28;
+```
+![Caption for the picture](transaction.PNG)
+Question 2:2.1create star schema based on previous sql database.2.2there are five dimension tables and one fact table to be createn and populated
+```{sql connection=db}
+create table if not exists History01(Historyid int primary key,PubStatus varchar(30),Year int,Month int,Day int);
+
+```
+```{sql connection=db}
+insert into History01 (Historyid,PubStatus,Year,Month,Day)select Historyid,PubStatus,Year,Month,Day from History28;
+
+```
+dimension table History 
+```{sql connection=db}
+select * from History01;
+```
+```{sql connection=db}
+create table if not exists Article01(Articleid int primary key,PubModel varchar(30),ArticleTitle varchar(255));
+```
+```{sql connection=db}
+insert into Article01(Articleid,PubModel,ArticleTitle) select Articleid,PubModel,ArticleTitle from Article28
+```
+dimension table Article
+```{sql connection=db}
+select * from Article01;
+```
+
+```{sql connection=db}
+create table if not exists Author04(Authorid integer primary key Autoincrement , `LastName` varchar(30), `ForeName` Varchar(30),`Initials` Varchar(255));
+```
+```{sql connection=db}
+insert into Author04 (LastName,ForeName,Initials) select distinct LastName, ForeName,Initials  from Author28;
+
+```
+dimension table Author
+```{sql connection=db}
+select * from Author04;
+```
+```{sql connection=db}
+create table if not exists Journal02(Journalid integer primary key Autoincrement,ISSN varchar(255), IssnType varchar(255),CitedMedium varchar(255),Volume int,Issue int,Title varchar(255),ISOAbbreviation varchar(255));
+```
+
+```{sql connection=db}
+insert into Journal02(ISSN,IssnType,CitedMedium,Volume,Issue,Title,ISOAbbreviation) select ISSN,IssnType,CitedMedium,Volume,Issue,Title,ISOAbbreviation from Journal28
+
+```
+dimension table Journal
+```{sql connection=db}
+select*from Journal02;
+```
+```{sql connection=db}
+create table if not exists PubDate01(PubDateid integer primary key Autoincrement,
+PubDate varchar(255));
+```
+```{sql connection=db}
+insert into PubDate01 (PubDate) select PubDate from Journal28;
+```
+dimension table PubDate
+```{sql connection=db}
+select*from PubDate01;
+```
+
+```{sql connection=db}
+Create table if not exists Transaction07(Transactionid integer primary key Autoincrement, Articleid int,Historyid int,Authorid int,Journalid int,PubDateid int,constraint id1 foreign key(Articleid) references Article01(Articleid),constraint id2 foreign key(Historyid) references History01(Historyid),constraint id3 foreign key(Authorid) references Author02(Authorid),constraint id4 foreign key(Journalid) references Journal02(Journalid),constraint id5 foreign key(PubDateid) references PubDate01(PubDateid))
+```
+
+
+```{sql connection=db}
+insert into Transaction07 (Historyid,Articleid,Authorid,Journalid,PubDateid)
+select History28.Historyid,Article01.Articleid,Author04.Authorid,Journal02.Journalid,Journal02.Journalid from History28 cross join Article01 on History28.Articleid=Article01.Articleid
+cross join Author28 on Author28.Articleid=Article01.Articleid inner join Author04 on Author28.LastName=Author04.LastName and Author28.Initials=Author04.Initials cross join Journal28 on Journal28.Articleid=Article01.Articleid inner join Journal02 on Journal02.ISSN=Journal28.ISSN ;
+```
+fact table Transaction
+
+```{sql connection=db}
+select * from Transaction07;
+```
+For question3:3.1query numbers of publication per season. Firstly ,create season table and show query result per season. 3.2Secondly, show graph and comment on it. 
+```{sql connection=db}
+create table season(winter int,spring int,summer int,autume);
+```
+
+
+```{sql connection=db}
+select count(PubDateid) as winter from PubDate01 where PubDate like '%Dec%' or PubDate like '%Jan%' or pubDate like '%Feb%'
+
+```
+
+
+```{sql connection=db}
+select count(PubDateid) as Spring from PubDate01 where PubDate like '%Mar%' or PubDate like '%Apr%' or pubDate like '%Mar%'
+```
+```{sql connection=db}
+select count(PubDateid) as Summer from PubDate01 where PubDate like '%Jun%' or PubDate like '%Jul%' or pubDate like '%Aug%'
+```
+```{sql connection=db}
+select count(PubDateid) as Autume from PubDate01 where PubDate like '%Sep%' or PubDate like '%Oct%' or pubDate like '%Nov%'
+```
+```{sql connection=db}
+create view iou as
+select count(PubDateid) from PubDate01 where PubDate like '%Sep%' or PubDate like '%Oct%' or pubDate like '%Nov%'
+```
+
+```{sql connection=db}
+insert into season (winter) select count(PubDateid) as winter from PubDate01 where PubDate like '%Dec%' or PubDate like '%Jan%' or pubDate like '%Feb%'
+
+```
+
+```{sql connection=db}
+insert into season (spring)select count(PubDateid) as Spring from PubDate01 where PubDate like '%Mar%' or PubDate like '%Apr%' or pubDate like '%Mar%'
+```
+```{sql connection=db}
+insert into season (summer)select count(PubDateid) as Summer from PubDate01 where PubDate like '%Jun%' or PubDate like '%Jul%' or pubDate like '%Aug%'
+```
+
+```{sql connection=db}
+insert into season (autume)select count(PubDateid) as Autume from PubDate01 where PubDate like '%Sep%' or PubDate like '%Oct%' or pubDate like '%Nov%'
+```
+```{sql connection=db}
+create view season1 as
+select SUM(winter) as winter,SUM(spring) as spring,SUM(summer) as summer,SUM(autume) as autumn from season;
+```
+
+```{sql connection=db}
+select * from season1;
+```
+the result tells me:it shows seasonal pattern in fact, the Autumn is the season that it contributes to few publications. It give me an idea that the article is most likely to be published in Winter.
+```{r}
+
+H<-c(6,4,5,3)
+M<-c("winter","spring","summer","autumn")
+barplot(H,names.arg=M,xlab="season",ylab="number of publications")
+```
+the graph of numbers of publication per season 
+
